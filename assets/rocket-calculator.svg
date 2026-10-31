@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#172b4d"/>
+      <stop offset="1" stop-color="#0b1628"/>
+    </linearGradient>
+    <linearGradient id="hull" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f8fcff"/>
+      <stop offset="1" stop-color="#a8d7f0"/>
+    </linearGradient>
+    <linearGradient id="flame" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffd166"/>
+      <stop offset="1" stop-color="#ff7043"/>
+    </linearGradient>
+  </defs>
+  <rect x="20" y="20" width="472" height="472" rx="112" fill="url(#background)"/>
+  <path d="M92 342c25 87 129 116 218 73 59-29 97-82 105-137"
+        fill="none" stroke="#527194" stroke-width="13" stroke-linecap="round"/>
+  <circle cx="126" cy="155" r="9" fill="#d9efff"/>
+  <circle cx="378" cy="115" r="7" fill="#ffd166"/>
+  <circle cx="405" cy="335" r="6" fill="#d9efff"/>
+  <g transform="rotate(35 256 256)">
+    <path d="M256 84c-50 47-72 105-72 180v78h144v-78c0-75-22-133-72-180Z"
+          fill="url(#hull)" stroke="#ffffff" stroke-width="8" stroke-linejoin="round"/>
+    <path d="M184 251c-28 15-46 43-48 83l48-17Z" fill="#39b8cf"/>
+    <path d="M328 251c28 15 46 43 48 83l-48-17Z" fill="#2589b4"/>
+    <circle cx="256" cy="205" r="30" fill="#123452" stroke="#59d3e2" stroke-width="10"/>
+    <path d="M226 341h60l-10 43h-40Z" fill="#ff9f43"/>
+    <path d="M240 373h32l-16 58Z" fill="url(#flame)"/>
+    <path d="M252 382h8l-4 30Z" fill="#fff1a8"/>
+  </g>
+  <path d="M111 344c12 20 30 33 53 39" fill="none" stroke="#ffb454"
+        stroke-width="11" stroke-linecap="round"/>
+</svg>

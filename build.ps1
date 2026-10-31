@@ -1,0 +1,1 @@
+uv run pyinstaller --clean --noconfirm --onefile --windowed --name "缺氧火箭燃料推算" --icon "assets\rocket-calculator.ico" --add-data "assets\rocket-calculator.png;assets" --add-data "assets\rocket-calculator.ico;assets" "缺氧火箭燃料推算.py"

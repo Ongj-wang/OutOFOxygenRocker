@@ -22,11 +22,13 @@
     在单调上升段用倍增扩界 + 二分求「满足目标的最少燃料量」。
 """
 
+import json
 import math
+import os
 import sys
-from pathlib import Path
 import tkinter as tk
-from tkinter import messagebox, ttk
+from pathlib import Path
+from tkinter import messagebox, simpledialog, ttk
 
 # ---------- 基础参数表（取自原表 IF 分支） ----------
 ENGINE_EFFICIENCY = {"蒸汽引擎": 20.0, "石油引擎": 40.0, "液氢引擎": 60.0}     # km/kg
@@ -150,7 +152,7 @@ class RocketCalculatorApp:
         self.root = root
         self.root.title("缺氧火箭燃料推算")
         self.root.geometry("860x700")
-        self.root.minsize(760, 640)
+        self.root.minsize(640, 750)
         self.root.configure(bg="#f3f6fa")
         asset_dir = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent)) / "assets"
         self._window_icon = tk.PhotoImage(file=str(asset_dir / "rocket-calculator.png"))
@@ -158,22 +160,139 @@ class RocketCalculatorApp:
         if sys.platform == "win32":
             root.iconbitmap(str(asset_dir / "rocket-calculator.ico"))
 
-        self.engine_var = tk.StringVar(value="石油引擎")
-        self.oxidizer_var = tk.StringVar(value="氧石")
-        self.target_var = tk.StringVar(value="23784")
-        self.engine_count_var = tk.StringVar(value="1")
-        self.booster_var = tk.BooleanVar(value=False)
+        self._profile_path = self._get_profile_path()
+        self.profiles, self.next_rocket_id, self.active_rocket = self._load_profiles()
+        self._loading_profile = False
+        self._save_callback = None
+
+        profile = self.profiles[self.active_rocket]
+        self.engine_var = tk.StringVar(value=profile["engine"])
+        self.oxidizer_var = tk.StringVar(value=profile["oxidizer"])
+        self.target_var = tk.StringVar(value=profile["target"])
+        self.engine_count_var = tk.StringVar(value=profile["engine_count"])
+        self.booster_var = tk.BooleanVar(value=profile["use_booster"])
         self.cabin_vars = {
-            "指挥舱": tk.StringVar(value="1"),
-            "研究舱": tk.StringVar(value="0"),
-            "货舱": tk.StringVar(value="0"),
-            "燃料舱": tk.StringVar(value="1"),
-            "氧化剂舱": tk.StringVar(value="1"),
+            name: tk.StringVar(value=profile["cabins"][name])
+            for name in CABIN_UNIT_MASS
         }
 
         self._configure_style()
         self._build_layout()
         self._update_engine_fields()
+        for variable in (
+            self.engine_var, self.oxidizer_var, self.target_var,
+            self.engine_count_var, self.booster_var, *self.cabin_vars.values(),
+        ):
+            variable.trace_add("write", self._on_profile_changed)
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+        self._schedule_save()
+
+    @staticmethod
+    def _get_profile_path():
+        if sys.platform == "win32":
+            data_dir = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
+        else:
+            data_dir = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+        return data_dir / "OutOFOxygenRocker" / "rockets.json"
+
+    @staticmethod
+    def _default_profile():
+        return {
+            "engine": "石油引擎",
+            "oxidizer": "氧石",
+            "target": "23784",
+            "engine_count": "1",
+            "use_booster": False,
+            "cabins": {
+                "指挥舱": "1", "研究舱": "0", "货舱": "0",
+                "燃料舱": "1", "氧化剂舱": "1",
+            },
+        }
+
+    def _load_profiles(self):
+        if not self._profile_path.exists():
+            return {"Rocket1": self._default_profile()}, 2, "Rocket1"
+
+        try:
+            with self._profile_path.open("r", encoding="utf-8") as file:
+                data = json.load(file)
+            profiles = data["profiles"]
+            active = data["active_rocket"]
+            next_id = data["next_rocket_id"]
+            if (
+                not isinstance(profiles, dict)
+                or not profiles
+                or not all(isinstance(name, str) and isinstance(value, dict)
+                           for name, value in profiles.items())
+                or not isinstance(active, str)
+                or active not in profiles
+                or not isinstance(next_id, int)
+                or isinstance(next_id, bool)
+            ):
+                raise ValueError("配置文件格式不正确。")
+            for profile in profiles.values():
+                cabins = profile.get("cabins")
+                if (
+                    profile.get("engine") not in ENGINE_EFFICIENCY
+                    or profile.get("oxidizer") not in OXIDIZER_BOOST
+                    or not isinstance(profile.get("target"), str)
+                    or not isinstance(profile.get("engine_count"), str)
+                    or not isinstance(profile.get("use_booster"), bool)
+                    or not isinstance(cabins, dict)
+                    or set(cabins) != set(CABIN_UNIT_MASS)
+                    or not all(isinstance(value, str) for value in cabins.values())
+                ):
+                    raise ValueError("火箭配置内容不完整或无效。")
+            return profiles, max(next_id, 1), active
+        except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+            messagebox.showerror(
+                "配置读取失败",
+                f"无法读取火箭配置文件：\n{self._profile_path}\n\n{exc}\n\n"
+                "将使用默认配置继续运行。",
+                parent=self.root,
+            )
+            return {"Rocket1": self._default_profile()}, 2, "Rocket1"
+
+    def _profile_snapshot(self):
+        return {
+            "engine": self.engine_var.get(),
+            "oxidizer": self.oxidizer_var.get(),
+            "target": self.target_var.get(),
+            "engine_count": self.engine_count_var.get(),
+            "use_booster": self.booster_var.get(),
+            "cabins": {name: variable.get() for name, variable in self.cabin_vars.items()},
+        }
+
+    def _on_profile_changed(self, *_args):
+        if not self._loading_profile:
+            self._schedule_save()
+
+    def _schedule_save(self):
+        if self._save_callback is not None:
+            self.root.after_cancel(self._save_callback)
+        self._save_callback = self.root.after(400, self._save_profiles)
+
+    def _save_profiles(self):
+        self._save_callback = None
+        self.profiles[self.active_rocket] = self._profile_snapshot()
+        data = {
+            "profiles": self.profiles,
+            "active_rocket": self.active_rocket,
+            "next_rocket_id": self.next_rocket_id,
+        }
+        try:
+            self._profile_path.parent.mkdir(parents=True, exist_ok=True)
+            temp_path = self._profile_path.with_suffix(".tmp")
+            temp_path.write_text(
+                json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            temp_path.replace(self._profile_path)
+        except OSError as exc:
+            messagebox.showerror(
+                "配置保存失败",
+                f"无法保存火箭配置：\n{self._profile_path}\n\n{exc}",
+                parent=self.root,
+            )
 
     def _configure_style(self):
         style = ttk.Style(self.root)
@@ -232,7 +351,22 @@ class RocketCalculatorApp:
 
     def _build_config(self, parent):
         ttk.Label(parent, text="火箭配置", style="Section.TLabel").grid(
-            row=0, column=0, columnspan=2, sticky="w", pady=(0, 16)
+            row=0, column=0, sticky="w", pady=(0, 16)
+        )
+        profile_controls = ttk.Frame(parent, style="Card.TFrame")
+        profile_controls.grid(row=0, column=1, sticky="ew", pady=(0, 16))
+        profile_controls.columnconfigure(0, weight=1)
+        self.profile_combo = ttk.Combobox(
+            profile_controls, values=list(self.profiles), state="readonly", width=10,
+        )
+        self.profile_combo.set(self.active_rocket)
+        self.profile_combo.grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        self.profile_combo.bind("<<ComboboxSelected>>", self._switch_profile)
+        ttk.Button(profile_controls, text="新增", command=self._add_profile).grid(
+            row=0, column=1, padx=4
+        )
+        ttk.Button(profile_controls, text="重命名", command=self._rename_profile).grid(
+            row=0, column=2, padx=(4, 0)
         )
 
         ttk.Label(parent, text="目标里程（km）", style="Card.TLabel").grid(
@@ -296,6 +430,80 @@ class RocketCalculatorApp:
         ttk.Button(actions, text="恢复默认", command=self._reset).grid(
             row=0, column=1, sticky="ew", padx=(6, 0)
         )
+
+    def _switch_profile(self, _event=None):
+        selected = self.profile_combo.get()
+        if selected == self.active_rocket:
+            return
+        self.profiles[self.active_rocket] = self._profile_snapshot()
+        self.active_rocket = selected
+        self._load_profile_into_fields(selected)
+        self._schedule_save()
+
+    def _add_profile(self):
+        while f"Rocket{self.next_rocket_id}" in self.profiles:
+            self.next_rocket_id += 1
+        name = f"Rocket{self.next_rocket_id}"
+        self.next_rocket_id += 1
+        self.profiles[self.active_rocket] = self._profile_snapshot()
+        self.profiles[name] = self._default_profile()
+        self.active_rocket = name
+        self.profile_combo.configure(values=list(self.profiles))
+        self.profile_combo.set(name)
+        self._load_profile_into_fields(name)
+        self._schedule_save()
+
+    def _rename_profile(self):
+        name = simpledialog.askstring(
+            "重命名火箭", "请输入新的火箭名称：",
+            initialvalue=self.active_rocket, parent=self.root,
+        )
+        if name is None:
+            return
+        name = name.strip()
+        if not name:
+            messagebox.showerror("名称无效", "火箭名称不能为空。", parent=self.root)
+            return
+        if name != self.active_rocket and name in self.profiles:
+            messagebox.showerror("名称已存在", "已有同名火箭，请使用其他名称。", parent=self.root)
+            return
+        self.profiles[self.active_rocket] = self._profile_snapshot()
+        profile = self.profiles.pop(self.active_rocket)
+        self.profiles[name] = profile
+        self.active_rocket = name
+        self.profile_combo.configure(values=list(self.profiles))
+        self.profile_combo.set(name)
+        self._schedule_save()
+
+    def _load_profile_into_fields(self, name):
+        profile = self.profiles[name]
+        self._loading_profile = True
+        try:
+            self.engine_var.set(profile["engine"])
+            self.oxidizer_var.set(profile["oxidizer"])
+            self.target_var.set(profile["target"])
+            self.engine_count_var.set(profile["engine_count"])
+            self.booster_var.set(profile["use_booster"])
+            for cabin_name, variable in self.cabin_vars.items():
+                variable.set(profile["cabins"][cabin_name])
+        finally:
+            self._loading_profile = False
+        self._update_engine_fields()
+        self._reset_result()
+
+    def _reset_result(self):
+        self.result_status.configure(text="填写配置后点击“开始推算”。", foreground="#253247")
+        self.result_detail.configure(
+            text="使用脚本中的质量、推进效率与载重惩罚公式进行反推。"
+        )
+        for value in self.metric_values.values():
+            value.configure(text="—")
+
+    def _on_close(self):
+        if self._save_callback is not None:
+            self.root.after_cancel(self._save_callback)
+        self._save_profiles()
+        self.root.destroy()
 
     def _build_result(self, parent):
         ttk.Label(parent, text="推算结果", style="Section.TLabel").grid(
@@ -415,22 +623,16 @@ class RocketCalculatorApp:
         )
 
     def _reset(self):
-        self.engine_var.set("石油引擎")
-        self.oxidizer_var.set("氧石")
-        self.target_var.set("23784")
-        self.engine_count_var.set("1")
-        self.booster_var.set(False)
-        defaults = {"指挥舱": "1", "研究舱": "0", "货舱": "0",
-                    "燃料舱": "1", "氧化剂舱": "1"}
-        for name, value in defaults.items():
+        profile = self._default_profile()
+        self.engine_var.set(profile["engine"])
+        self.oxidizer_var.set(profile["oxidizer"])
+        self.target_var.set(profile["target"])
+        self.engine_count_var.set(profile["engine_count"])
+        self.booster_var.set(profile["use_booster"])
+        for name, value in profile["cabins"].items():
             self.cabin_vars[name].set(value)
         self._update_engine_fields()
-        self.result_status.configure(text="填写配置后点击“开始推算”。", foreground="#253247")
-        self.result_detail.configure(
-            text="使用脚本中的质量、推进效率与载重惩罚公式进行反推。"
-        )
-        for value in self.metric_values.values():
-            value.configure(text="—")
+        self._reset_result()
 
 
 if __name__ == "__main__":

@@ -1,1 +1,1 @@
-uv run pyinstaller --clean --noconfirm --onefile --windowed --name "ç¼ºæ°§ç«ç®­ç‡ƒæ–™æ¨ç®—" --icon "assets\rocket-calculator.ico" --add-data "assets\rocket-calculator.png;assets" --add-data "assets\rocket-calculator.ico;assets" "ç¼ºæ°§ç«ç®­ç‡ƒæ–™æ¨ç®—.py"
+uv run pyinstaller --clean --noconfirm --onefile --windowed --name "È±Ñõ»ğ¼ıÈ¼ÁÏÍÆËã" --icon "assets\rocket-calculator.ico" --add-data "assets\rocket-calculator.png;assets" --add-data "assets\rocket-calculator.ico;assets" "È±Ñõ»ğ¼ıÈ¼ÁÏÍÆËã.py"

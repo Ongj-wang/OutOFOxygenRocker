@@ -151,8 +151,8 @@ class RocketCalculatorApp:
     def __init__(self, root):
         self.root = root
         self.root.title("缺氧火箭燃料推算")
-        self.root.geometry("860x700")
-        self.root.minsize(640, 750)
+        self.root.geometry("960x760")
+        self.root.minsize(840, 750)
         self.root.configure(bg="#f3f6fa")
         asset_dir = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent)) / "assets"
         self._window_icon = tk.PhotoImage(file=str(asset_dir / "rocket-calculator.png"))
@@ -184,6 +184,7 @@ class RocketCalculatorApp:
             self.engine_count_var, self.booster_var, *self.cabin_vars.values(),
         ):
             variable.trace_add("write", self._on_profile_changed)
+        self.root.bind("<Return>", self._calculate)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         self._schedule_save()
 
@@ -329,7 +330,7 @@ class RocketCalculatorApp:
         ttk.Label(header, text="缺氧火箭燃料推算", style="Title.TLabel").pack(anchor="w")
         ttk.Label(
             header,
-            text="输入目标里程和火箭配置，计算达到目标所需的最少燃料与氧化剂。",
+            text="输入目标里程和火箭配置，按 Enter 或点击按钮计算所需的最少燃料与氧化剂。",
             style="Subtitle.TLabel",
         ).pack(anchor="w", pady=(4, 0))
 
@@ -367,6 +368,9 @@ class RocketCalculatorApp:
         )
         ttk.Button(profile_controls, text="重命名", command=self._rename_profile).grid(
             row=0, column=2, padx=(4, 0)
+        )
+        ttk.Button(profile_controls, text="删除", command=self._delete_profile).grid(
+            row=0, column=3, padx=(4, 0)
         )
 
         ttk.Label(parent, text="目标里程（km）", style="Card.TLabel").grid(
@@ -475,6 +479,27 @@ class RocketCalculatorApp:
         self.profile_combo.set(name)
         self._schedule_save()
 
+    def _delete_profile(self):
+        if len(self.profiles) == 1:
+            messagebox.showwarning(
+                "无法删除", "至少需要保留一个火箭配置。", parent=self.root
+            )
+            return
+        if not messagebox.askyesno(
+            "删除火箭",
+            f"确定删除火箭“{self.active_rocket}”吗？此操作无法撤销。",
+            parent=self.root,
+        ):
+            return
+
+        self.profiles[self.active_rocket] = self._profile_snapshot()
+        del self.profiles[self.active_rocket]
+        self.active_rocket = next(iter(self.profiles))
+        self.profile_combo.configure(values=list(self.profiles))
+        self.profile_combo.set(self.active_rocket)
+        self._load_profile_into_fields(self.active_rocket)
+        self._schedule_save()
+
     def _load_profile_into_fields(self, name):
         profile = self.profiles[name]
         self._loading_profile = True
@@ -562,9 +587,12 @@ class RocketCalculatorApp:
             raise ValueError(f"{label}不能小于 0。")
         return count
 
-    def _calculate(self):
+    def _calculate(self, _event=None):
         try:
-            target = float(self.target_var.get())
+            try:
+                target = float(self.target_var.get())
+            except ValueError as exc:
+                raise ValueError("目标里程请输入有效数字。") from exc
             if not math.isfinite(target) or target < 0:
                 raise ValueError("目标里程请输入大于或等于 0 的有效数字。")
             engine_count = self._read_count(self.engine_count_var.get(), "引擎数量")
